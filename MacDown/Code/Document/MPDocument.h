@@ -27,5 +27,8 @@
 - (IBAction)selectPreviewLayoutButton:(id)sender;
 - (NSUInteger)layoutStateForToolbar;
 - (BOOL)continuousReadingEnabledForToolbar;
+- (IBAction)increasePreviewZoom:(id)sender;
+- (IBAction)decreasePreviewZoom:(id)sender;
+- (IBAction)resetPreviewZoom:(id)sender;
 
 @end

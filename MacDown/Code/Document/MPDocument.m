@@ -34,6 +34,7 @@
 
 static NSString * const kMPDefaultAutosaveName = @"Untitled";
 static NSString * const kMPWorkspaceLayoutStateKey = @"workspaceLayoutState";
+static NSString * const kMPPreviewZoomMultiplierKey = @"previewZoomMultiplier";
 
 
 NS_INLINE NSString *MPHTMLEscape(NSString *string)
@@ -1241,7 +1242,7 @@ shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
 - (NSString *)continuousReadingComposedHTML
 {
     NSMutableString *body = [NSMutableString string];
-    [body appendString:@"<style>.macdown-continuous-reading-section{min-height:100vh;padding:2rem 0 4rem;border-top:4px solid #4f8cff}.macdown-continuous-reading-separator{margin:0 0 2rem;padding:.5rem .75rem;color:#2f63d8;background:rgba(79,140,255,.10);border-left:4px solid #4f8cff;font-size:.9em;font-weight:600}</style>\n"];
+    [body appendString:@"<style>.macdown-continuous-reading-section{min-height:100vh;padding:2rem 0 4rem;border-top:4px solid #4f8cff}.macdown-continuous-reading-section img{max-width:100%;height:auto}.macdown-continuous-reading-separator{margin:0 0 2rem;padding:.5rem .75rem;color:#2f63d8;background:rgba(79,140,255,.10);border-left:4px solid #4f8cff;font-size:.9em;font-weight:600}</style>\n"];
 
     NSUInteger index = 0;
     for (NSURL *url in self.workspaceMarkdownFileURLs)
@@ -2296,6 +2297,34 @@ shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
     [self.renderer parseAndRenderLater];
 }
 
+- (IBAction)increasePreviewZoom:(id)sender
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    CGFloat zoom = [defaults doubleForKey:kMPPreviewZoomMultiplierKey];
+    if (zoom <= 0.0)
+        zoom = 1.0;
+    zoom = MIN(2.5, zoom + 0.1);
+    [defaults setDouble:zoom forKey:kMPPreviewZoomMultiplierKey];
+    [self scaleWebview];
+}
+
+- (IBAction)decreasePreviewZoom:(id)sender
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    CGFloat zoom = [defaults doubleForKey:kMPPreviewZoomMultiplierKey];
+    if (zoom <= 0.0)
+        zoom = 1.0;
+    zoom = MAX(0.5, zoom - 0.1);
+    [defaults setDouble:zoom forKey:kMPPreviewZoomMultiplierKey];
+    [self scaleWebview];
+}
+
+- (IBAction)resetPreviewZoom:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:kMPPreviewZoomMultiplierKey];
+    [self scaleWebview];
+}
+
 
 #pragma mark - Private
 
@@ -2586,15 +2615,22 @@ shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
 
 - (void)scaleWebview
 {
-    if (!self.preferences.previewZoomRelativeToBaseFontSize)
-        return;
+    CGFloat scale = 1.0;
+    if (self.preferences.previewZoomRelativeToBaseFontSize)
+    {
+        CGFloat fontSize = self.preferences.editorBaseFontSize;
+        if (fontSize > 0.0)
+        {
+            static const CGFloat defaultSize = 14.0;
+            scale = fontSize / defaultSize;
+        }
+    }
 
-    CGFloat fontSize = self.preferences.editorBaseFontSize;
-    if (fontSize <= 0.0)
-        return;
-
-    static const CGFloat defaultSize = 14.0;
-    CGFloat scale = fontSize / defaultSize;
+    CGFloat manualZoom = [[NSUserDefaults standardUserDefaults]
+        doubleForKey:kMPPreviewZoomMultiplierKey];
+    if (manualZoom <= 0.0)
+        manualZoom = 1.0;
+    scale *= manualZoom;
     
 #if 0
     // Sadly, this doesn’t work correctly.

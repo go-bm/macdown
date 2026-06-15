@@ -414,6 +414,22 @@
                                     <action selector="toggleContinuousReading:" target="-1" id="qbc-Rd-r9v"/>
                                 </connections>
                             </menuItem>
+                            <menuItem isSeparatorItem="YES" id="PVZ-Sep-001"/>
+                            <menuItem title="Zoom Preview In" keyEquivalent="+" id="PVZ-In-001">
+                                <connections>
+                                    <action selector="increasePreviewZoom:" target="-1" id="PVZ-In-Act"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Zoom Preview Out" keyEquivalent="-" id="PVZ-Out-001">
+                                <connections>
+                                    <action selector="decreasePreviewZoom:" target="-1" id="PVZ-Out-Act"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Reset Preview Zoom" id="PVZ-Reset-001">
+                                <connections>
+                                    <action selector="resetPreviewZoom:" target="-1" id="PVZ-Reset-Act"/>
+                                </connections>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="Cux-kV-g5Z"/>
                             <menuItem title="Show Toolbar" keyEquivalent="t" id="fKI-yk-0lv">
                                 <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
