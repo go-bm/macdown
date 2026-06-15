@@ -32,6 +32,8 @@ typedef NS_ENUM(NSUInteger, MPCodeBlockAccessoryType)
 - (void)render;
 
 - (NSString *)currentHtml;
+- (NSString *)HTMLFragmentForMarkdown:(NSString *)markdown;
+- (NSString *)fullHTMLWithTitle:(NSString *)title body:(NSString *)body;
 - (NSString *)HTMLForExportWithStyles:(BOOL)withStyles
                          highlighting:(BOOL)withHighlighting;
 

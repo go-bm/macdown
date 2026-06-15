@@ -83,6 +83,11 @@
                                     <action selector="openDocument:" target="-1" id="bVn-NM-KNZ"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Open Folder…" keyEquivalent="O" id="wkF-0p-OpF">
+                                <connections>
+                                    <action selector="openFolder:" target="eq0-c4-vgQ" id="HZQ-64-Oy8"/>
+                                </connections>
+                            </menuItem>
                             <menuItem title="Open Recent" id="tXI-mr-wws">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <menu key="submenu" title="Open Recent" systemMenu="recentDocuments" id="oas-Oc-fiZ">
@@ -397,6 +402,16 @@
                             <menuItem title="Hide Editor Pane" keyEquivalent="E" id="wHk-AQ-iOQ">
                                 <connections>
                                     <action selector="toggleEditorPane:" target="-1" id="BGN-6z-VZN"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Hide Markdown List" keyEquivalent="L" id="WmL-Hd-Lst">
+                                <connections>
+                                    <action selector="toggleWorkspaceSidebar:" target="-1" id="vVX-Xh-U5Q"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Enable Continuous Reading" keyEquivalent="R" id="CRd-Tg-Lnk">
+                                <connections>
+                                    <action selector="toggleContinuousReading:" target="-1" id="qbc-Rd-r9v"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="Cux-kV-g5Z"/>

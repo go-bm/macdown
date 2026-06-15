@@ -583,15 +583,14 @@ NS_INLINE void MPFreeHTMLRenderer(hoedown_renderer *htmlRenderer)
     }
 }
 
-- (void)parseMarkdown:(NSString *)markdown {
-    [self.currentLanguages removeAllObjects];
-    
+- (NSString *)HTMLFragmentForMarkdown:(NSString *)markdown
+{
     id<MPRendererDelegate> delegate = self.delegate;
     int extensions = [delegate rendererExtensions:self];
     BOOL smartypants = [delegate rendererHasSmartyPants:self];
     BOOL hasFrontMatter = [delegate rendererDetectsFrontMatter:self];
     BOOL hasTOC = [delegate rendererRendersTOC:self];
-    
+
     id frontMatter = nil;
     if (hasFrontMatter)
     {
@@ -602,18 +601,30 @@ NS_INLINE void MPFreeHTMLRenderer(hoedown_renderer *htmlRenderer)
     hoedown_renderer *htmlRenderer = MPCreateHTMLRenderer(self);
     hoedown_renderer *tocRenderer = NULL;
     if (hasTOC)
-    tocRenderer = MPCreateHTMLTOCRenderer();
-    self.currentHtml = MPHTMLFromMarkdown(
-                                          markdown, extensions, smartypants, [frontMatter HTMLTable],
-                                          htmlRenderer, tocRenderer);
+        tocRenderer = MPCreateHTMLTOCRenderer();
+    NSString *html = MPHTMLFromMarkdown(
+        markdown, extensions, smartypants, [frontMatter HTMLTable],
+        htmlRenderer, tocRenderer);
     if (tocRenderer)
-    hoedown_html_renderer_free(tocRenderer);
+        hoedown_html_renderer_free(tocRenderer);
     MPFreeHTMLRenderer(htmlRenderer);
-    
+
     self.extensions = extensions;
     self.smartypants = smartypants;
     self.TOC = hasTOC;
     self.frontMatter = hasFrontMatter;
+    return html;
+}
+
+- (NSString *)fullHTMLWithTitle:(NSString *)title body:(NSString *)body
+{
+    return MPGetHTML(title, body, self.stylesheets, MPAssetFullLink,
+                     self.scripts, MPAssetFullLink);
+}
+
+- (void)parseMarkdown:(NSString *)markdown {
+    [self.currentLanguages removeAllObjects];
+    self.currentHtml = [self HTMLFragmentForMarkdown:markdown];
 }
 
 - (void)renderIfPreferencesChanged

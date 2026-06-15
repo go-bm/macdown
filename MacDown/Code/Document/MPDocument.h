@@ -19,4 +19,13 @@
 @property (nonatomic, readwrite) NSString *markdown;
 @property (nonatomic, readonly) NSString *html;
 
+- (BOOL)openWorkspaceAtURL:(NSURL *)directoryURL error:(NSError **)error;
+- (BOOL)openWorkspaceAtURL:(NSURL *)directoryURL
+          selectingFileURL:(NSURL *)fileURL error:(NSError **)error;
+- (IBAction)toggleContinuousReading:(id)sender;
+- (IBAction)selectEditorLayoutButton:(id)sender;
+- (IBAction)selectPreviewLayoutButton:(id)sender;
+- (NSUInteger)layoutStateForToolbar;
+- (BOOL)continuousReadingEnabledForToolbar;
+
 @end

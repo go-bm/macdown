@@ -33,6 +33,22 @@
 #import <JavaScriptCore/JavaScriptCore.h>
 
 static NSString * const kMPDefaultAutosaveName = @"Untitled";
+static NSString * const kMPWorkspaceLayoutStateKey = @"workspaceLayoutState";
+
+
+NS_INLINE NSString *MPHTMLEscape(NSString *string)
+{
+    NSMutableString *result = string.mutableCopy;
+    [result replaceOccurrencesOfString:@"&" withString:@"&amp;"
+                                options:0 range:NSMakeRange(0, result.length)];
+    [result replaceOccurrencesOfString:@"<" withString:@"&lt;"
+                                options:0 range:NSMakeRange(0, result.length)];
+    [result replaceOccurrencesOfString:@">" withString:@"&gt;"
+                                options:0 range:NSMakeRange(0, result.length)];
+    [result replaceOccurrencesOfString:@"\"" withString:@"&quot;"
+                                options:0 range:NSMakeRange(0, result.length)];
+    return result;
+}
 
 
 NS_INLINE NSString *MPEditorPreferenceKeyWithValueKey(NSString *key)
@@ -171,7 +187,8 @@ NS_INLINE NSColor *MPGetWebViewBackgroundColor(WebView *webview)
 
 
 @interface MPDocument ()
-    <NSSplitViewDelegate, NSTextViewDelegate,
+    <NSSplitViewDelegate, NSTableViewDataSource, NSTableViewDelegate,
+     NSTextViewDelegate,
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 101100
      WebEditingDelegate, WebFrameLoadDelegate, WebPolicyDelegate, WebResourceLoadDelegate,
 #endif
@@ -183,8 +200,31 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     MPWordCountTypeCharacterNoSpaces,
 };
 
+typedef NS_ENUM(NSUInteger, MPWorkspaceLandingPosition) {
+    MPWorkspaceLandingPositionTop,
+    MPWorkspaceLandingPositionBottom,
+};
+
+typedef NS_ENUM(NSUInteger, MPContinuousReadingBoundary) {
+    MPContinuousReadingBoundaryNone,
+    MPContinuousReadingBoundaryTop,
+    MPContinuousReadingBoundaryBottom,
+};
+
+typedef NS_ENUM(NSUInteger, MPDocumentLayoutState) {
+    MPDocumentLayoutStateEditorOnly,
+    MPDocumentLayoutStatePreviewOnly,
+    MPDocumentLayoutStateEditorLeftPreviewRight,
+    MPDocumentLayoutStatePreviewLeftEditorRight,
+};
+
 @property (weak) IBOutlet NSToolbar *toolbar;
 @property (weak) IBOutlet MPDocumentSplitView *splitView;
+@property (strong) NSSplitView *workspaceSplitView;
+@property (strong) NSView *workspaceSidebarView;
+@property (strong) NSTableView *workspaceTableView;
+@property (strong) id continuousReadingTitlebarAccessoryController;
+@property (strong) NSButton *continuousReadingTitlebarButton;
 @property (weak) IBOutlet NSView *editorContainer;
 @property (unsafe_unretained) IBOutlet MPEditorView *editor;
 @property (weak) IBOutlet NSLayoutConstraint *editorPaddingBottom;
@@ -215,6 +255,21 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 @property (strong) NSArray<NSNumber *> *webViewHeaderLocations;
 @property (strong) NSArray<NSNumber *> *editorHeaderLocations;
 @property (nonatomic) BOOL inLiveScroll;
+@property (strong) NSURL *workspaceRootURL;
+@property (copy) NSArray<NSURL *> *workspaceMarkdownFileURLs;
+@property (strong) NSURL *pendingWorkspaceFileURL;
+@property (nonatomic) BOOL switchingWorkspaceFile;
+@property (nonatomic) BOOL workspaceSidebarShown;
+@property (nonatomic) CGFloat workspaceSidebarWidth;
+@property (nonatomic) MPWorkspaceLandingPosition pendingWorkspaceLandingPosition;
+@property (nonatomic) MPWorkspaceLandingPosition pendingPreviewLandingPosition;
+@property (nonatomic) BOOL hasPendingPreviewLandingPosition;
+@property (nonatomic) BOOL applyingContinuousReadingScrollPosition;
+@property (nonatomic) BOOL continuousReadingEnabled;
+@property (nonatomic) BOOL continuousReadingComposedPreviewActive;
+@property (nonatomic) BOOL renderingContinuousReadingPreview;
+@property (copy) NSArray<NSURL *> *continuousReadingRenderedFileURLs;
+@property (nonatomic) BOOL syncingContinuousReadingSelection;
 
 // Store file content in initializer until nib is loaded.
 @property (copy) NSString *loadedString;
@@ -222,6 +277,40 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 - (void)scaleWebview;
 - (void)syncScrollers;
 -(void) updateHeaderLocations;
+- (void)autoOpenWorkspaceForCurrentFileIfNeeded;
+- (BOOL)isWorkspaceMarkdownFileURL:(NSURL *)fileURL;
+- (NSUInteger)indexOfWorkspaceFileURL:(NSURL *)fileURL;
+- (void)selectWorkspaceFileURL:(NSURL *)fileURL;
+- (void)installWorkspaceSidebarIfNeeded;
+- (void)setWorkspaceSidebarVisible:(BOOL)visible;
+- (BOOL)reloadWorkspaceFileListWithError:(NSError **)error;
+- (void)requestSwitchToWorkspaceFileURL:(NSURL *)targetURL;
+- (void)requestSwitchToWorkspaceFileURL:(NSURL *)targetURL
+                        landingPosition:(MPWorkspaceLandingPosition)position;
+- (BOOL)loadWorkspaceFileURL:(NSURL *)targetURL error:(NSError **)error;
+- (void)restoreWorkspaceSelectionToCurrentFile;
+- (void)updateAutosaveNameForCurrentFile;
+- (MPContinuousReadingBoundary)continuousReadingBoundaryForScrollView:(NSScrollView *)scrollView;
+- (void)handleContinuousReadingScrollEndForScrollView:(NSScrollView *)scrollView;
+- (void)applyLandingPosition:(MPWorkspaceLandingPosition)position
+                toScrollView:(NSScrollView *)scrollView;
+- (void)refreshContinuousReadingPreviewIfNeeded;
+- (NSString *)continuousReadingComposedHTML;
+- (NSString *)continuousReadingSectionIDForFileURL:(NSURL *)fileURL;
+- (void)scrollContinuousReadingPreviewToFileURL:(NSURL *)fileURL;
+- (void)disableContinuousReadingComposedPreview;
+- (void)installContinuousReadingTitlebarSwitchIfAvailable;
+- (void)updateContinuousReadingTitlebarSwitch;
+- (BOOL)continuousReadingAvailable;
+- (void)syncContinuousReadingSelectionFromPreview;
+- (BOOL)loadWorkspaceFileURLForContinuousReadingSelection:(NSURL *)targetURL
+                                                     error:(NSError **)error;
+- (MPDocumentLayoutState)currentLayoutState;
+- (void)setDocumentLayoutState:(MPDocumentLayoutState)state;
+- (BOOL)isEditorOnLeft;
+- (void)setEditorOnLeft:(BOOL)editorOnLeft;
+- (CGFloat)usableSplitRatio;
+- (void)restoreWorkspaceLayoutStateIfNeeded;
 
 @end
 
@@ -236,7 +325,11 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
                 [window enableFlushWindow];
         }
         [weakObj scaleWebview];
-        if (weakObj.preferences.editorSyncScrolling)
+        if (weakObj.continuousReadingComposedPreviewActive)
+        {
+            [weakObj scrollContinuousReadingPreviewToFileURL:weakObj.fileURL];
+        }
+        else if (weakObj.preferences.editorSyncScrolling)
         {
             [weakObj updateHeaderLocations];
             [weakObj syncScrollers];
@@ -247,6 +340,14 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
             NSRect bounds = contentView.bounds;
             bounds.origin.y = weakObj.lastPreviewScrollTop;
             contentView.bounds = bounds;
+        }
+        if (weakObj.hasPendingPreviewLandingPosition)
+        {
+            [weakObj applyLandingPosition:weakObj.pendingPreviewLandingPosition
+                             toScrollView:webView.enclosingScrollView];
+            weakObj.lastPreviewScrollTop =
+                webView.enclosingScrollView.contentView.bounds.origin.y;
+            weakObj.hasPendingPreviewLandingPosition = NO;
         }
     };
 }
@@ -347,6 +448,9 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
     self.isPreviewReady = NO;
     self.shouldHandleBoundsChange = YES;
     self.previousSplitRatio = -1.0;
+    self.workspaceSidebarShown = YES;
+    self.workspaceSidebarWidth = 220.0;
+    self.continuousReadingEnabled = NO;
     
     return self;
 }
@@ -363,11 +467,8 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
     // All files use their absolute path to keep their window states.
-    NSString *autosaveName = kMPDefaultAutosaveName;
-    if (self.fileURL)
-        autosaveName = self.fileURL.absoluteString;
-    controller.window.frameAutosaveName = autosaveName;
-    self.autosaveName = autosaveName;
+    [self updateAutosaveNameForCurrentFile];
+    NSString *autosaveName = self.autosaveName;
 
     // Perform initial resizing manually because for some reason untitled
     // documents do not pick up the autosaved frame automatically in 10.10.
@@ -456,6 +557,9 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
         [self setupEditor:nil];
         [self redrawDivider];
         [self reloadFromLoadedString];
+        [self autoOpenWorkspaceForCurrentFileIfNeeded];
+        [self restoreWorkspaceLayoutStateIfNeeded];
+        [self updateContinuousReadingTitlebarSwitch];
     }];
 }
 
@@ -468,6 +572,98 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
         [self.renderer parseAndRenderNow];
         [self.highlighter parseAndHighlightNow];
     }
+}
+
+- (BOOL)openWorkspaceAtURL:(NSURL *)directoryURL error:(NSError **)error
+{
+    return [self openWorkspaceAtURL:directoryURL selectingFileURL:nil error:error];
+}
+
+- (BOOL)openWorkspaceAtURL:(NSURL *)directoryURL
+          selectingFileURL:(NSURL *)fileURL error:(NSError **)error
+{
+    NSNumber *isDirectory = nil;
+    if (![directoryURL getResourceValue:&isDirectory
+                                  forKey:NSURLIsDirectoryKey error:error]
+        || !isDirectory.boolValue)
+    {
+        if (error && !*error)
+        {
+            NSDictionary *info = @{
+                NSLocalizedDescriptionKey: NSLocalizedString(@"The selected item is not a folder.", @"")
+            };
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain
+                                         code:NSFileReadInvalidFileNameError
+                                     userInfo:info];
+        }
+        return NO;
+    }
+
+    self.workspaceRootURL = directoryURL;
+    [self installWorkspaceSidebarIfNeeded];
+    [self setWorkspaceSidebarVisible:self.workspaceSidebarShown];
+    [self updateAutosaveNameForCurrentFile];
+
+    if (![self reloadWorkspaceFileListWithError:error])
+        return NO;
+    [self updateContinuousReadingTitlebarSwitch];
+
+    if (fileURL)
+    {
+        NSUInteger selectedIndex = [self indexOfWorkspaceFileURL:fileURL];
+        if (selectedIndex != NSNotFound)
+        {
+            if (![fileURL isEqual:self.fileURL])
+            {
+                if (![self loadWorkspaceFileURL:fileURL error:error])
+                    return NO;
+            }
+            [self selectWorkspaceFileURL:fileURL];
+            return YES;
+        }
+    }
+
+    if (self.workspaceMarkdownFileURLs.count)
+    {
+        BOOL ok = [self loadWorkspaceFileURL:self.workspaceMarkdownFileURLs[0]
+                                       error:error];
+        if (ok)
+            [self selectWorkspaceFileURL:self.workspaceMarkdownFileURLs[0]];
+        return ok;
+    }
+
+    self.fileURL = nil;
+    self.loadedString = @"";
+    [self reloadFromLoadedString];
+    [self updateChangeCount:NSChangeCleared];
+    [self updateAutosaveNameForCurrentFile];
+    return YES;
+}
+
+- (void)autoOpenWorkspaceForCurrentFileIfNeeded
+{
+    if (self.workspaceRootURL || ![self isWorkspaceMarkdownFileURL:self.fileURL])
+        return;
+
+    NSURL *directoryURL = [self.fileURL URLByDeletingLastPathComponent];
+    NSError *error = nil;
+    [self openWorkspaceAtURL:directoryURL selectingFileURL:self.fileURL error:&error];
+}
+
+- (BOOL)isWorkspaceMarkdownFileURL:(NSURL *)fileURL
+{
+    if (!fileURL.isFileURL)
+        return NO;
+
+    NSSet *extensions = [NSSet setWithObjects:@"md", @"markdown", nil];
+    if (![extensions containsObject:fileURL.pathExtension.lowercaseString])
+        return NO;
+
+    NSNumber *isRegularFile = nil;
+    if (![fileURL getResourceValue:&isRegularFile
+                             forKey:NSURLIsRegularFileKey error:nil])
+        return NO;
+    return isRegularFile.boolValue;
 }
 
 - (void)close
@@ -684,7 +880,569 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
         NSLocalizedString(@"Restore Editor Pane",
                           @"Toggle editor pane menu item");
     }
+    else if (action == @selector(toggleWorkspaceSidebar:))
+    {
+        NSMenuItem *it = (NSMenuItem *)item;
+        it.hidden = (self.workspaceRootURL == nil);
+        it.title = self.workspaceSidebarShown ?
+            NSLocalizedString(@"Hide Markdown List",
+                              @"Toggle workspace sidebar menu item") :
+            NSLocalizedString(@"Show Markdown List",
+                              @"Toggle workspace sidebar menu item");
+        result = result && self.workspaceRootURL != nil;
+    }
+    else if (action == @selector(toggleContinuousReading:))
+    {
+        NSMenuItem *it = (NSMenuItem *)item;
+        it.hidden = (self.workspaceRootURL == nil);
+        it.title = self.continuousReadingEnabled ?
+            NSLocalizedString(@"Disable Continuous Reading",
+                              @"Toggle continuous reading menu item") :
+            NSLocalizedString(@"Enable Continuous Reading",
+                              @"Toggle continuous reading menu item");
+        it.state = self.continuousReadingEnabled ? NSOnState : NSOffState;
+        result = result && [self continuousReadingAvailable];
+    }
     return result;
+}
+
+
+#pragma mark - Workspace
+
+- (void)installWorkspaceSidebarIfNeeded
+{
+    if (self.workspaceSplitView || !self.splitView.superview)
+        return;
+
+    NSView *contentView = self.splitView.superview;
+    NSArray *constraints = contentView.constraints.copy;
+    for (NSLayoutConstraint *constraint in constraints)
+    {
+        if (constraint.firstItem == self.splitView || constraint.secondItem == self.splitView)
+            [contentView removeConstraint:constraint];
+    }
+
+    NSRect bounds = contentView.bounds;
+    CGFloat sidebarWidth = self.workspaceSidebarWidth > 0.0 ? self.workspaceSidebarWidth : 220.0;
+    NSSplitView *workspaceSplitView = [[NSSplitView alloc] initWithFrame:bounds];
+    workspaceSplitView.vertical = YES;
+    workspaceSplitView.dividerStyle = NSSplitViewDividerStyleThin;
+    workspaceSplitView.translatesAutoresizingMaskIntoConstraints = NO;
+
+    NSView *sidebarView = [[NSView alloc] initWithFrame:NSMakeRect(0.0, 0.0, sidebarWidth, bounds.size.height)];
+    NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:sidebarView.bounds];
+    scrollView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    scrollView.hasVerticalScroller = YES;
+    scrollView.borderType = NSNoBorder;
+
+    NSTableView *tableView = [[NSTableView alloc] initWithFrame:scrollView.bounds];
+    NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:@"filename"];
+    column.title = NSLocalizedString(@"Markdown Files", @"workspace sidebar column title");
+    column.width = sidebarWidth;
+    [tableView addTableColumn:column];
+    tableView.headerView = nil;
+    tableView.delegate = self;
+    tableView.dataSource = self;
+    tableView.target = self;
+    tableView.action = @selector(selectWorkspaceFile:);
+    tableView.allowsMultipleSelection = NO;
+    scrollView.documentView = tableView;
+    [sidebarView addSubview:scrollView];
+
+    NSView *documentView = [[NSView alloc] initWithFrame:NSMakeRect(sidebarWidth, 0.0, bounds.size.width - sidebarWidth, bounds.size.height)];
+    documentView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    [self.splitView removeFromSuperview];
+    [documentView addSubview:self.splitView];
+    [documentView addConstraints:@[
+        [NSLayoutConstraint constraintWithItem:self.splitView attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:documentView attribute:NSLayoutAttributeTop multiplier:1.0 constant:0.0],
+        [NSLayoutConstraint constraintWithItem:self.splitView attribute:NSLayoutAttributeBottom relatedBy:NSLayoutRelationEqual toItem:documentView attribute:NSLayoutAttributeBottom multiplier:1.0 constant:0.0],
+        [NSLayoutConstraint constraintWithItem:self.splitView attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:documentView attribute:NSLayoutAttributeLeading multiplier:1.0 constant:0.0],
+        [NSLayoutConstraint constraintWithItem:self.splitView attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:documentView attribute:NSLayoutAttributeTrailing multiplier:1.0 constant:0.0]
+    ]];
+
+    [workspaceSplitView addSubview:sidebarView];
+    [workspaceSplitView addSubview:documentView];
+    [contentView addSubview:workspaceSplitView];
+    [contentView addConstraints:@[
+        [NSLayoutConstraint constraintWithItem:workspaceSplitView attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:contentView attribute:NSLayoutAttributeTop multiplier:1.0 constant:0.0],
+        [NSLayoutConstraint constraintWithItem:workspaceSplitView attribute:NSLayoutAttributeBottom relatedBy:NSLayoutRelationEqual toItem:contentView attribute:NSLayoutAttributeBottom multiplier:1.0 constant:0.0],
+        [NSLayoutConstraint constraintWithItem:workspaceSplitView attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:contentView attribute:NSLayoutAttributeLeading multiplier:1.0 constant:0.0],
+        [NSLayoutConstraint constraintWithItem:workspaceSplitView attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:contentView attribute:NSLayoutAttributeTrailing multiplier:1.0 constant:0.0]
+    ]];
+
+    self.workspaceSplitView = workspaceSplitView;
+    self.workspaceSidebarView = sidebarView;
+    self.workspaceTableView = tableView;
+    [workspaceSplitView setPosition:sidebarWidth ofDividerAtIndex:0];
+}
+
+- (void)setWorkspaceSidebarVisible:(BOOL)visible
+{
+    if (!self.workspaceSplitView)
+        return;
+
+    if (!visible)
+    {
+        CGFloat currentWidth = self.workspaceSidebarView.frame.size.width;
+        if (currentWidth > 1.0)
+            self.workspaceSidebarWidth = currentWidth;
+        self.workspaceSidebarShown = NO;
+        self.workspaceSidebarView.hidden = YES;
+        [self.workspaceSplitView setPosition:0.0 ofDividerAtIndex:0];
+        return;
+    }
+
+    CGFloat sidebarWidth = self.workspaceSidebarWidth > 0.0 ? self.workspaceSidebarWidth : 220.0;
+    self.workspaceSidebarShown = YES;
+    self.workspaceSidebarView.hidden = NO;
+    [self.workspaceSplitView setPosition:sidebarWidth ofDividerAtIndex:0];
+}
+
+- (BOOL)reloadWorkspaceFileListWithError:(NSError **)error
+{
+    NSArray *contents = [[NSFileManager defaultManager]
+        contentsOfDirectoryAtURL:self.workspaceRootURL
+      includingPropertiesForKeys:@[NSURLIsRegularFileKey]
+                         options:NSDirectoryEnumerationSkipsHiddenFiles
+                           error:error];
+    if (!contents)
+        return NO;
+
+    NSMutableArray *urls = [NSMutableArray array];
+    NSSet *extensions = [NSSet setWithObjects:@"md", @"markdown", nil];
+    for (NSURL *url in contents)
+    {
+        NSNumber *isRegularFile = nil;
+        [url getResourceValue:&isRegularFile forKey:NSURLIsRegularFileKey error:nil];
+        if (!isRegularFile.boolValue)
+            continue;
+        if (![extensions containsObject:url.pathExtension.lowercaseString])
+            continue;
+        [urls addObject:url];
+    }
+
+    [urls sortUsingComparator:^NSComparisonResult(NSURL *a, NSURL *b) {
+        return [a.lastPathComponent localizedCaseInsensitiveCompare:b.lastPathComponent];
+    }];
+    self.workspaceMarkdownFileURLs = urls;
+    [self.workspaceTableView reloadData];
+    return YES;
+}
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView
+{
+    return self.workspaceMarkdownFileURLs.count;
+}
+
+- (id)tableView:(NSTableView *)tableView
+objectValueForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row
+{
+    return self.workspaceMarkdownFileURLs[row].lastPathComponent;
+}
+
+- (void)tableViewSelectionDidChange:(NSNotification *)notification
+{
+    if (notification.object == self.workspaceTableView)
+        [self selectWorkspaceFile:self.workspaceTableView];
+}
+
+- (IBAction)selectWorkspaceFile:(id)sender
+{
+    if (self.syncingContinuousReadingSelection)
+        return;
+
+    NSInteger row = self.workspaceTableView.selectedRow;
+    if (row < 0 || row >= (NSInteger)self.workspaceMarkdownFileURLs.count)
+        return;
+
+    NSURL *url = self.workspaceMarkdownFileURLs[row];
+    if (self.continuousReadingComposedPreviewActive)
+    {
+        NSError *error = nil;
+        [self loadWorkspaceFileURLForContinuousReadingSelection:url error:&error];
+        [self scrollContinuousReadingPreviewToFileURL:url];
+        return;
+    }
+
+    [self requestSwitchToWorkspaceFileURL:url];
+}
+
+- (void)requestSwitchToWorkspaceFileURL:(NSURL *)targetURL
+{
+    [self requestSwitchToWorkspaceFileURL:targetURL
+                          landingPosition:MPWorkspaceLandingPositionTop];
+}
+
+- (void)requestSwitchToWorkspaceFileURL:(NSURL *)targetURL
+                        landingPosition:(MPWorkspaceLandingPosition)position
+{
+    if ([targetURL isEqual:self.fileURL])
+        return;
+
+    self.pendingWorkspaceFileURL = targetURL;
+    self.pendingWorkspaceLandingPosition = position;
+    [self canCloseDocumentWithDelegate:self
+                    shouldCloseSelector:@selector(document:shouldSwitchWorkspaceFile:contextInfo:)
+                            contextInfo:NULL];
+}
+
+- (void)document:(NSDocument *)document
+shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
+{
+    NSURL *targetURL = self.pendingWorkspaceFileURL;
+    self.pendingWorkspaceFileURL = nil;
+
+    if (!shouldSwitch || !targetURL)
+    {
+        self.hasPendingPreviewLandingPosition = NO;
+        [self restoreWorkspaceSelectionToCurrentFile];
+        return;
+    }
+
+    NSError *error = nil;
+    if (![self loadWorkspaceFileURL:targetURL error:&error])
+    {
+        self.hasPendingPreviewLandingPosition = NO;
+        [self restoreWorkspaceSelectionToCurrentFile];
+        if (error)
+            [self presentError:error];
+        return;
+    }
+    [self selectWorkspaceFileURL:targetURL];
+}
+
+- (BOOL)loadWorkspaceFileURL:(NSURL *)targetURL error:(NSError **)error
+{
+    NSString *content = [NSString stringWithContentsOfURL:targetURL
+                                                 encoding:NSUTF8StringEncoding
+                                                    error:error];
+    if (!content)
+        return NO;
+
+    MPWorkspaceLandingPosition landingPosition = self.pendingWorkspaceLandingPosition;
+    self.fileURL = targetURL;
+    self.switchingWorkspaceFile = YES;
+    self.editor.string = content;
+    NSUInteger selectionLocation = landingPosition == MPWorkspaceLandingPositionBottom ? self.editor.string.length : 0;
+    self.editor.selectedRange = NSMakeRange(selectionLocation, 0);
+    [self applyLandingPosition:landingPosition toScrollView:self.editor.enclosingScrollView];
+    self.switchingWorkspaceFile = NO;
+    self.pendingPreviewLandingPosition = landingPosition;
+    self.hasPendingPreviewLandingPosition = YES;
+    [self.undoManager removeAllActions];
+    [self updateChangeCount:NSChangeCleared];
+    [self updateAutosaveNameForCurrentFile];
+    [self.renderer parseAndRenderNow];
+    [self.highlighter parseAndHighlightNow];
+
+    for (NSWindowController *controller in self.windowControllers)
+        [controller synchronizeWindowTitleWithDocumentName];
+    return YES;
+}
+
+- (BOOL)loadWorkspaceFileURLForContinuousReadingSelection:(NSURL *)targetURL
+                                                     error:(NSError **)error
+{
+    if ([targetURL isEqual:self.fileURL])
+        return YES;
+
+    NSString *content = [NSString stringWithContentsOfURL:targetURL
+                                                 encoding:NSUTF8StringEncoding
+                                                    error:error];
+    if (!content)
+        return NO;
+
+    self.fileURL = targetURL;
+    self.switchingWorkspaceFile = YES;
+    self.editor.string = content;
+    self.editor.selectedRange = NSMakeRange(0, 0);
+    [self applyLandingPosition:MPWorkspaceLandingPositionTop
+                  toScrollView:self.editor.enclosingScrollView];
+    self.switchingWorkspaceFile = NO;
+    [self.undoManager removeAllActions];
+    [self updateChangeCount:NSChangeCleared];
+    [self updateAutosaveNameForCurrentFile];
+
+    for (NSWindowController *controller in self.windowControllers)
+        [controller synchronizeWindowTitleWithDocumentName];
+    return YES;
+}
+
+- (NSUInteger)indexOfWorkspaceFileURL:(NSURL *)fileURL
+{
+    NSString *path = fileURL.URLByStandardizingPath.path;
+    if (!path)
+        return NSNotFound;
+
+    NSUInteger index = 0;
+    for (NSURL *url in self.workspaceMarkdownFileURLs)
+    {
+        if ([url.URLByStandardizingPath.path isEqualToString:path])
+            return index;
+        index++;
+    }
+    return NSNotFound;
+}
+
+- (void)selectWorkspaceFileURL:(NSURL *)fileURL
+{
+    NSUInteger index = [self indexOfWorkspaceFileURL:fileURL];
+    if (index == NSNotFound)
+    {
+        [self.workspaceTableView deselectAll:nil];
+        return;
+    }
+    [self.workspaceTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:index]
+                         byExtendingSelection:NO];
+}
+
+- (void)restoreWorkspaceSelectionToCurrentFile
+{
+    [self selectWorkspaceFileURL:self.fileURL];
+}
+
+- (void)updateAutosaveNameForCurrentFile
+{
+    NSString *autosaveName = kMPDefaultAutosaveName;
+    if (self.workspaceRootURL)
+        autosaveName = [@"workspace:" stringByAppendingString:self.workspaceRootURL.absoluteString];
+    else if (self.fileURL)
+        autosaveName = self.fileURL.absoluteString;
+    for (NSWindowController *controller in self.windowControllers)
+        controller.window.frameAutosaveName = autosaveName;
+    self.autosaveName = autosaveName;
+}
+
+- (void)refreshContinuousReadingPreviewIfNeeded
+{
+    if (!self.continuousReadingEnabled || !self.workspaceRootURL
+        || self.workspaceMarkdownFileURLs.count < 2)
+    {
+        [self disableContinuousReadingComposedPreview];
+        return;
+    }
+
+    NSString *html = [self continuousReadingComposedHTML];
+    if (!html)
+    {
+        [self disableContinuousReadingComposedPreview];
+        return;
+    }
+
+    self.renderingContinuousReadingPreview = YES;
+    self.continuousReadingComposedPreviewActive = YES;
+    self.alreadyRenderingInWeb = YES;
+    [self.preview.mainFrame loadHTMLString:html baseURL:self.workspaceRootURL];
+    self.currentBaseUrl = self.workspaceRootURL;
+    self.renderingContinuousReadingPreview = NO;
+}
+
+- (NSString *)continuousReadingComposedHTML
+{
+    NSMutableString *body = [NSMutableString string];
+    [body appendString:@"<style>.macdown-continuous-reading-section{min-height:100vh;padding:2rem 0 4rem;border-top:4px solid #4f8cff}.macdown-continuous-reading-separator{margin:0 0 2rem;padding:.5rem .75rem;color:#2f63d8;background:rgba(79,140,255,.10);border-left:4px solid #4f8cff;font-size:.9em;font-weight:600}</style>\n"];
+
+    NSUInteger index = 0;
+    for (NSURL *url in self.workspaceMarkdownFileURLs)
+    {
+        NSError *error = nil;
+        NSString *markdown = [url isEqual:self.fileURL] ? self.editor.string :
+            [NSString stringWithContentsOfURL:url encoding:NSUTF8StringEncoding error:&error];
+        if (!markdown)
+            continue;
+
+        NSString *fragment = [self.renderer HTMLFragmentForMarkdown:markdown];
+        NSString *sectionID = [NSString stringWithFormat:@"macdown-continuous-reading-section-%lu", index];
+        NSString *title = MPHTMLEscape(url.lastPathComponent);
+        NSString *urlString = MPHTMLEscape(url.absoluteString);
+        [body appendFormat:@"<section class=\"macdown-continuous-reading-section\" id=\"%@\" data-file-index=\"%lu\" data-file-url=\"%@\"><div class=\"macdown-continuous-reading-separator\"><span>%@</span></div>%@</section>\n", sectionID, index, urlString, title, fragment];
+        index++;
+    }
+
+    if (index == 0)
+        return nil;
+
+    NSString *title = self.workspaceRootURL.lastPathComponent ?: @"Workspace";
+    return [self.renderer fullHTMLWithTitle:title body:body];
+}
+
+- (NSString *)continuousReadingSectionIDForFileURL:(NSURL *)fileURL
+{
+    NSUInteger index = [self indexOfWorkspaceFileURL:fileURL];
+    if (index == NSNotFound)
+        return nil;
+    return [NSString stringWithFormat:@"macdown-continuous-reading-section-%lu", index];
+}
+
+- (void)scrollContinuousReadingPreviewToFileURL:(NSURL *)fileURL
+{
+    NSString *sectionID = [self continuousReadingSectionIDForFileURL:fileURL];
+    if (!sectionID)
+        return;
+    NSString *script = [NSString stringWithFormat:
+        @"var e=document.getElementById('%@'); if(e){ e.scrollIntoView(true); }", sectionID];
+    [self.preview stringByEvaluatingJavaScriptFromString:script];
+    self.lastPreviewScrollTop = self.preview.enclosingScrollView.contentView.bounds.origin.y;
+}
+
+- (void)syncContinuousReadingSelectionFromPreview
+{
+    if (!self.continuousReadingComposedPreviewActive || self.syncingContinuousReadingSelection)
+        return;
+
+    NSString *script =
+        @"(function(){var s=document.querySelectorAll('.macdown-continuous-reading-section');"
+        @"for(var i=0;i<s.length;i++){var r=s[i].getBoundingClientRect();"
+        @"if(r.bottom>80){return s[i].getAttribute('data-file-index');}}return null;})()";
+    NSString *result = [self.preview stringByEvaluatingJavaScriptFromString:script];
+    NSInteger index = result.integerValue;
+    if (index < 0 || index >= (NSInteger)self.workspaceMarkdownFileURLs.count)
+        return;
+
+    NSURL *url = self.workspaceMarkdownFileURLs[index];
+    if ([url isEqual:self.fileURL])
+        return;
+
+    self.syncingContinuousReadingSelection = YES;
+    NSError *error = nil;
+    if (self.editorVisible)
+        [self loadWorkspaceFileURLForContinuousReadingSelection:url error:&error];
+    else
+    {
+        self.fileURL = url;
+        [self updateAutosaveNameForCurrentFile];
+        for (NSWindowController *controller in self.windowControllers)
+            [controller synchronizeWindowTitleWithDocumentName];
+    }
+    [self selectWorkspaceFileURL:url];
+    self.syncingContinuousReadingSelection = NO;
+}
+
+- (void)disableContinuousReadingComposedPreview
+{
+    self.continuousReadingComposedPreviewActive = NO;
+    self.renderingContinuousReadingPreview = NO;
+    self.continuousReadingRenderedFileURLs = nil;
+}
+
+- (BOOL)continuousReadingAvailable
+{
+    return self.workspaceRootURL != nil && self.workspaceMarkdownFileURLs.count > 1;
+}
+
+- (void)installContinuousReadingTitlebarSwitchIfAvailable
+{
+    if (self.continuousReadingTitlebarAccessoryController)
+        return;
+
+    NSWindow *window = self.windowForSheet;
+    Class accessoryClass = NSClassFromString(@"NSTitlebarAccessoryViewController");
+    if (!window || !accessoryClass
+        || ![window respondsToSelector:@selector(addTitlebarAccessoryViewController:)])
+        return;
+
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 54.0, 24.0)];
+    button.title = NSLocalizedString(@"Read", @"Short titlebar label for continuous reading");
+    button.toolTip = NSLocalizedString(@"Continuous Reading", @"Continuous reading titlebar switch tooltip");
+    button.bezelStyle = NSTexturedRoundedBezelStyle;
+    [button setButtonType:NSPushOnPushOffButton];
+    button.target = self;
+    button.action = @selector(toggleContinuousReading:);
+
+    id accessoryController = [[accessoryClass alloc] init];
+    [accessoryController setView:button];
+    if ([accessoryController respondsToSelector:@selector(setLayoutAttribute:)])
+        [accessoryController setValue:@(NSLayoutAttributeLeft) forKey:@"layoutAttribute"];
+    [window addTitlebarAccessoryViewController:accessoryController];
+
+    self.continuousReadingTitlebarAccessoryController = accessoryController;
+    self.continuousReadingTitlebarButton = button;
+    [self updateContinuousReadingTitlebarSwitch];
+}
+
+- (void)updateContinuousReadingTitlebarSwitch
+{
+    NSButton *button = self.continuousReadingTitlebarButton;
+    if (!button)
+        return;
+    button.hidden = (self.workspaceRootURL == nil);
+    button.enabled = [self continuousReadingAvailable];
+    button.state = self.continuousReadingEnabled ? NSOnState : NSOffState;
+}
+
+- (MPContinuousReadingBoundary)continuousReadingBoundaryForScrollView:(NSScrollView *)scrollView
+{
+    NSClipView *clipView = scrollView.contentView;
+    NSView *documentView = scrollView.documentView;
+    if (!clipView || !documentView)
+        return MPContinuousReadingBoundaryNone;
+
+    CGFloat y = NSMinY(clipView.bounds);
+    CGFloat visibleHeight = NSHeight(clipView.bounds);
+    CGFloat contentHeight = NSHeight(documentView.bounds);
+    CGFloat maxY = MAX(0.0, ceil(contentHeight - visibleHeight));
+    CGFloat epsilon = 2.0;
+
+    if (y <= epsilon)
+        return MPContinuousReadingBoundaryTop;
+    if (y >= maxY - epsilon)
+        return MPContinuousReadingBoundaryBottom;
+    return MPContinuousReadingBoundaryNone;
+}
+
+- (void)handleContinuousReadingScrollEndForScrollView:(NSScrollView *)scrollView
+{
+    if (!self.continuousReadingEnabled || self.continuousReadingComposedPreviewActive)
+        return;
+    if (!self.workspaceRootURL || self.workspaceMarkdownFileURLs.count < 2)
+        return;
+    if (self.switchingWorkspaceFile || self.pendingWorkspaceFileURL)
+        return;
+    if (self.applyingContinuousReadingScrollPosition)
+        return;
+
+    MPContinuousReadingBoundary boundary =
+        [self continuousReadingBoundaryForScrollView:scrollView];
+    if (boundary == MPContinuousReadingBoundaryNone)
+        return;
+
+    NSUInteger index = [self indexOfWorkspaceFileURL:self.fileURL];
+    if (index == NSNotFound)
+        return;
+
+    if (boundary == MPContinuousReadingBoundaryBottom)
+    {
+        if (index + 1 >= self.workspaceMarkdownFileURLs.count)
+            return;
+        [self requestSwitchToWorkspaceFileURL:self.workspaceMarkdownFileURLs[index + 1]
+                              landingPosition:MPWorkspaceLandingPositionTop];
+    }
+    else if (boundary == MPContinuousReadingBoundaryTop)
+    {
+        if (index == 0)
+            return;
+        [self requestSwitchToWorkspaceFileURL:self.workspaceMarkdownFileURLs[index - 1]
+                              landingPosition:MPWorkspaceLandingPositionBottom];
+    }
+}
+
+- (void)applyLandingPosition:(MPWorkspaceLandingPosition)position
+                toScrollView:(NSScrollView *)scrollView
+{
+    NSClipView *clipView = scrollView.contentView;
+    NSView *documentView = scrollView.documentView;
+    if (!clipView || !documentView)
+        return;
+
+    NSRect bounds = clipView.bounds;
+    CGFloat maxY = MAX(0.0, ceil(NSHeight(documentView.bounds) - NSHeight(bounds)));
+    bounds.origin.y = position == MPWorkspaceLandingPositionBottom ? maxY : 0.0;
+
+    self.applyingContinuousReadingScrollPosition = YES;
+    clipView.bounds = bounds;
+    [scrollView reflectScrolledClipView:clipView];
+    self.applyingContinuousReadingScrollPosition = NO;
 }
 
 
@@ -1051,6 +1809,13 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
     
     if (self.printing)
         return;
+
+    if (self.continuousReadingEnabled && self.workspaceRootURL
+        && !self.renderingContinuousReadingPreview)
+    {
+        [self refreshContinuousReadingPreviewIfNeeded];
+        return;
+    }
     
     self.alreadyRenderingInWeb = YES;
 
@@ -1160,6 +1925,7 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
 -(void)didEndLiveScroll:(NSNotification *)notification
 {
     _inLiveScroll = NO;
+    [self handleContinuousReadingScrollEndForScrollView:self.editor.enclosingScrollView];
 }
 
 - (void)editorBoundsDidChange:(NSNotification *)notification
@@ -1195,8 +1961,13 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
 
 - (void)previewDidLiveScroll:(NSNotification *)notification
 {
-    NSClipView *contentView = self.preview.enclosingScrollView.contentView;
+    NSScrollView *scrollView = self.preview.enclosingScrollView;
+    NSClipView *contentView = scrollView.contentView;
     self.lastPreviewScrollTop = contentView.bounds.origin.y;
+    if (self.continuousReadingComposedPreviewActive)
+        [self syncContinuousReadingSelectionFromPreview];
+    else
+        [self handleContinuousReadingScrollEndForScrollView:scrollView];
 }
 
 
@@ -1483,6 +2254,43 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
     [self toggleSplitterCollapsingEditorPane:YES];
 }
 
+- (IBAction)toggleWorkspaceSidebar:(id)sender
+{
+    [self setWorkspaceSidebarVisible:!self.workspaceSidebarShown];
+}
+
+- (IBAction)toggleContinuousReading:(id)sender
+{
+    self.continuousReadingEnabled = !self.continuousReadingEnabled;
+    if (self.continuousReadingEnabled)
+        [self refreshContinuousReadingPreviewIfNeeded];
+    else
+    {
+        [self disableContinuousReadingComposedPreview];
+        [self.renderer parseAndRenderNow];
+    }
+    [self updateContinuousReadingTitlebarSwitch];
+    [self.toolbarController updateContinuousReadingButtonImage];
+}
+
+- (IBAction)selectEditorLayoutButton:(id)sender
+{
+    MPDocumentLayoutState state = [self currentLayoutState];
+    if (state == MPDocumentLayoutStateEditorOnly)
+        [self setDocumentLayoutState:MPDocumentLayoutStatePreviewOnly];
+    else
+        [self setDocumentLayoutState:MPDocumentLayoutStateEditorOnly];
+}
+
+- (IBAction)selectPreviewLayoutButton:(id)sender
+{
+    MPDocumentLayoutState state = [self currentLayoutState];
+    if (state == MPDocumentLayoutStatePreviewLeftEditorRight)
+        [self setDocumentLayoutState:MPDocumentLayoutStateEditorLeftPreviewRight];
+    else
+        [self setDocumentLayoutState:MPDocumentLayoutStatePreviewLeftEditorRight];
+}
+
 - (IBAction)render:(id)sender
 {
     [self.renderer parseAndRenderLater];
@@ -1490,6 +2298,94 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
 
 
 #pragma mark - Private
+
+- (BOOL)isEditorOnLeft
+{
+    return self.splitView.subviews.count >= 2
+        && self.splitView.subviews[0] == self.editorContainer;
+}
+
+- (void)setEditorOnLeft:(BOOL)editorOnLeft
+{
+    if ([self isEditorOnLeft] == editorOnLeft)
+        return;
+
+    CGFloat ratio = self.splitView.dividerLocation;
+    [self.splitView swapViews];
+    if (ratio > 0.0 && ratio < 1.0)
+        [self setSplitViewDividerLocation:1.0 - ratio];
+    self.splitView.needsLayout = YES;
+}
+
+- (CGFloat)usableSplitRatio
+{
+    CGFloat ratio = self.previousSplitRatio;
+    if (ratio <= 0.0 || ratio >= 1.0)
+        ratio = 0.5;
+    return ratio;
+}
+
+- (MPDocumentLayoutState)currentLayoutState
+{
+    if (self.editorVisible && !self.previewVisible)
+        return MPDocumentLayoutStateEditorOnly;
+    if (!self.editorVisible && self.previewVisible)
+        return MPDocumentLayoutStatePreviewOnly;
+    return [self isEditorOnLeft] ? MPDocumentLayoutStateEditorLeftPreviewRight
+                                 : MPDocumentLayoutStatePreviewLeftEditorRight;
+}
+
+- (NSUInteger)layoutStateForToolbar
+{
+    return [self currentLayoutState];
+}
+
+- (BOOL)continuousReadingEnabledForToolbar
+{
+    return self.continuousReadingEnabled;
+}
+
+- (void)setDocumentLayoutState:(MPDocumentLayoutState)state
+{
+    CGFloat ratio = [self usableSplitRatio];
+    switch (state)
+    {
+        case MPDocumentLayoutStateEditorOnly:
+            [self setEditorOnLeft:YES];
+            self.previousSplitRatio = ratio;
+            [self setSplitViewDividerLocation:1.0];
+            break;
+        case MPDocumentLayoutStatePreviewOnly:
+            [self setEditorOnLeft:YES];
+            self.previousSplitRatio = ratio;
+            [self setSplitViewDividerLocation:0.0];
+            break;
+        case MPDocumentLayoutStateEditorLeftPreviewRight:
+            [self setEditorOnLeft:YES];
+            [self setSplitViewDividerLocation:ratio];
+            break;
+        case MPDocumentLayoutStatePreviewLeftEditorRight:
+            [self setEditorOnLeft:NO];
+            [self setSplitViewDividerLocation:1.0 - ratio];
+            break;
+    }
+    [[NSUserDefaults standardUserDefaults] setInteger:state
+                                               forKey:kMPWorkspaceLayoutStateKey];
+}
+
+- (void)restoreWorkspaceLayoutStateIfNeeded
+{
+    if (!self.workspaceRootURL)
+        return;
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    id storedState = [defaults objectForKey:kMPWorkspaceLayoutStateKey];
+    NSInteger state = storedState ? [defaults integerForKey:kMPWorkspaceLayoutStateKey]
+                                  : MPDocumentLayoutStateEditorLeftPreviewRight;
+    if (state < MPDocumentLayoutStateEditorOnly
+        || state > MPDocumentLayoutStatePreviewLeftEditorRight)
+        state = MPDocumentLayoutStateEditorLeftPreviewRight;
+    [self setDocumentLayoutState:(MPDocumentLayoutState)state];
+}
 
 - (void)toggleSplitterCollapsingEditorPane:(BOOL)forEditorPane
 {

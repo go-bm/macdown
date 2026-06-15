@@ -93,6 +93,8 @@ NS_INLINE void treat()
 
 @interface MPMainController ()
 @property (readonly) NSWindowController *preferencesWindowController;
+- (void)removeCrampedPreferencesFrames;
+- (void)ensurePreferencesWindowMinimumSize;
 @end
 
 
@@ -117,6 +119,7 @@ NS_INLINE void treat()
         [invocation invoke];
 #pragma clang diagnostic pop
     }
+    [self removeCrampedPreferencesFrames];
     [[NSAppleEventManager sharedAppleEventManager]
         setEventHandler:self
             andSelector:@selector(openUrlSchemeAppleEvent:withReplyEvent:)
@@ -210,9 +213,83 @@ NS_INLINE void treat()
     return _preferencesWindowController;
 }
 
+- (void)removeCrampedPreferencesFrames
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSArray *keys = @[
+        @"MASPreferences GeneralPreferences Frame",
+        @"MASPreferences MarkdownPreferences Frame",
+        @"MASPreferences EditorPreferences Frame",
+        @"MASPreferences HtmlPreferences Frame",
+        @"MASPreferences TerminalPreferences Frame",
+    ];
+    for (NSString *key in keys)
+    {
+        NSString *rectString = [defaults stringForKey:key];
+        if (!rectString)
+            continue;
+        NSRect rect = NSRectFromString(rectString);
+        if (rect.size.width < 760.0)
+            [defaults removeObjectForKey:key];
+    }
+}
+
+- (void)ensurePreferencesWindowMinimumSize
+{
+    NSWindow *window = self.preferencesWindowController.window;
+    if (!window)
+        return;
+
+    NSRect frame = window.frame;
+    NSSize contentSize = window.contentView.frame.size;
+    CGFloat widthDelta = MAX(0.0, 760.0 - contentSize.width);
+    CGFloat heightDelta = MAX(0.0, 320.0 - contentSize.height);
+    if (widthDelta == 0.0 && heightDelta == 0.0)
+        return;
+
+    frame.size.width += widthDelta;
+    frame.size.height += heightDelta;
+    frame.origin.y -= heightDelta;
+    [window setFrame:frame display:YES animate:NO];
+}
+
 - (IBAction)showPreferencesWindow:(id)sender
 {
     [self.preferencesWindowController showWindow:nil];
+    [self ensurePreferencesWindowMinimumSize];
+}
+
+- (IBAction)openFolder:(id)sender
+{
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.canChooseDirectories = YES;
+    panel.canChooseFiles = NO;
+    panel.allowsMultipleSelection = NO;
+    panel.canCreateDirectories = NO;
+
+    [panel beginWithCompletionHandler:^(NSInteger result) {
+        if (result != NSFileHandlingPanelOKButton)
+            return;
+
+        NSError *error = nil;
+        NSDocumentController *controller =
+            [NSDocumentController sharedDocumentController];
+        MPDocument *document = (MPDocument *)[controller openUntitledDocumentAndDisplay:YES
+                                                                                  error:&error];
+        if (!document)
+        {
+            if (error)
+                [controller presentError:error];
+            return;
+        }
+
+        if (![document openWorkspaceAtURL:panel.URL error:&error])
+        {
+            [document close];
+            if (error)
+                [controller presentError:error];
+        }
+    }];
 }
 
 - (IBAction)showHelp:(id)sender

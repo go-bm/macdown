@@ -25,6 +25,7 @@ static CGFloat itemWidth = 37;
      * Map toolbar item identifier to it's NSToolbarItem or NSToolbarItemGroup object
      */
     NSMutableDictionary *toolbarItemIdentifierObjectDictionary;
+    NSButton *continuousReadingButton;
 }
 
 - (id)init
@@ -47,12 +48,10 @@ static CGFloat itemWidth = 37;
 
 - (void)setupToolbarItems
 {
-    // Set up layout drop down alternatives. title will be set in validateUserInterfaceItem:
-    NSMenuItem *toggleEditorMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:@selector(toggleEditorPane:) keyEquivalent:@"e"];
-    NSMenuItem *togglePreviewMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:@selector(togglePreviewPane:) keyEquivalent:@"p"];
-    
     // Set up all available toolbar items
     self->toolbarItems = @[
+        [self toolbarItemContinuousReading],
+        [self toolbarItemLayoutControls],
         [self toolbarItemGroupWithIdentifier:@"indent-group" separated:YES label:NSLocalizedString(@"Shift Left/Right", @"") items:@[
             [self toolbarItemWithIdentifier:@"shift-left" label:NSLocalizedString(@"Shift Left", @"Shift text to the left toolbar button") icon:@"ToolbarIconShiftLeft" action:@selector(unindent:)],
             [self toolbarItemWithIdentifier:@"shift-right" label:NSLocalizedString(@"Shift Right", @"Shift text to the right toolbar button") icon:@"ToolbarIconShiftRight" action:@selector(indent:)]
@@ -82,12 +81,7 @@ static CGFloat itemWidth = 37;
         [self toolbarItemWithIdentifier:@"copy-html" label:NSLocalizedString(@"Copy HTML", @"Copy HTML toolbar button") icon:@"ToolbarIconCopyHTML" action:@selector(copyHtml:)],
         [self toolbarItemWithIdentifier:@"comment" label:NSLocalizedString(@"Comment", @"Comment toolbar button") icon:@"ToolbarIconComment" action:@selector(toggleComment:)],
         [self toolbarItemWithIdentifier:@"highlight" label:NSLocalizedString(@"Highlight", @"Highlight toolbar button") icon:@"ToolbarIconHighlight" action:@selector(toggleHighlight:)],
-        [self toolbarItemWithIdentifier:@"strikethrough" label:NSLocalizedString(@"Strikethrough", @"Strikethrough toolbar button") icon:@"ToolbarIconStrikethrough" action:@selector(toggleStrikethrough:)],
-        [self toolbarItemDropDownWithIdentifier:@"layout" label:NSLocalizedString(@"Layout", @"Layout toolbar button") icon:@"ToolbarIconEditorAndPreview" menuItems:
-            @[
-              toggleEditorMenuItem, togglePreviewMenuItem
-            ]
-        ]
+        [self toolbarItemWithIdentifier:@"strikethrough" label:NSLocalizedString(@"Strikethrough", @"Strikethrough toolbar button") icon:@"ToolbarIconStrikethrough" action:@selector(toggleStrikethrough:)]
     ];
     
     self->toolbarItemIdentifiers = [self toolbarItemIdentifiersFromItemsArray:self->toolbarItems];
@@ -113,12 +107,36 @@ static CGFloat itemWidth = 37;
     NSToolbarItemGroup *selectedGroup = self->toolbarItemIdentifierObjectDictionary[sender.identifier];
     NSToolbarItem *selectedItem = selectedGroup.subitems[selectedIndex];
     
-    // Invoke the toolbar item's action
-    // Must convert to IMP to let the compiler know about the method definition
-    MPDocument *document = self.document;
-    IMP imp = [document methodForSelector:selectedItem.action];
-    void (*impFunc)(id) = (void *)imp;
-    impFunc(document);
+    // Invoke the toolbar item's action.
+    [self.document performSelector:selectedItem.action withObject:sender];
+    if ([sender.identifier isEqualToString:@"layout-group"])
+        [self updateLayoutControlImages];
+}
+
+- (void)updateLayoutControlImages
+{
+    NSToolbarItemGroup *group = self->toolbarItemIdentifierObjectDictionary[@"layout-group"];
+    NSSegmentedControl *control = (NSSegmentedControl *)group.view;
+    NSUInteger state = [self.document layoutStateForToolbar];
+    BOOL previewOnly = (state == 1);
+    BOOL previewSplit = (state == 3);
+    [control setImage:(previewOnly ? [self previewOnlyIcon] : [self editorOnlyIcon])
+           forSegment:0];
+    [control setImage:(previewSplit ? [self splitIconWithEditorLeft:NO] : [self splitIconWithEditorLeft:YES])
+           forSegment:1];
+}
+
+- (void)updateContinuousReadingButtonImage
+{
+    self->continuousReadingButton.image = [self.document continuousReadingEnabledForToolbar]
+        ? [self continuousPagesIcon]
+        : [self singlePageIcon];
+}
+
+- (void)toggleContinuousReadingFromToolbar:(id)sender
+{
+    [self.document toggleContinuousReading:sender];
+    [self updateContinuousReadingButtonImage];
 }
 
 
@@ -234,6 +252,186 @@ static CGFloat itemWidth = 37;
     [self->toolbarItemIdentifierObjectDictionary setObject:itemGroup forKey:itemIdentifier];
     
     return itemGroup;
+}
+
+- (NSImage *)singlePageIcon
+{
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(19, 19)];
+    [image lockFocus];
+
+    [[NSColor controlTextColor] setStroke];
+    NSBezierPath *path = [NSBezierPath bezierPathWithRect:NSMakeRect(4, 4, 11, 11)];
+    path.lineWidth = 1.8;
+    [path stroke];
+
+    [image unlockFocus];
+    image.template = YES;
+    return image;
+}
+
+- (NSImage *)continuousPagesIcon
+{
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(19, 19)];
+    [image lockFocus];
+
+    [[NSColor controlTextColor] setStroke];
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    path.lineWidth = 1.8;
+
+    [path moveToPoint:NSMakePoint(4, 15)];
+    [path lineToPoint:NSMakePoint(4, 10.5)];
+    [path lineToPoint:NSMakePoint(15, 10.5)];
+    [path lineToPoint:NSMakePoint(15, 15)];
+
+    [path moveToPoint:NSMakePoint(4, 4)];
+    [path lineToPoint:NSMakePoint(4, 8.5)];
+    [path lineToPoint:NSMakePoint(15, 8.5)];
+    [path lineToPoint:NSMakePoint(15, 4)];
+
+    [path stroke];
+    [image unlockFocus];
+    image.template = YES;
+    return image;
+}
+
+- (NSImage *)editorOnlyIcon
+{
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(19, 19)];
+    [image lockFocus];
+    NSDictionary *attributes = @{
+        NSFontAttributeName: [NSFont boldSystemFontOfSize:14],
+        NSForegroundColorAttributeName: [NSColor controlTextColor],
+    };
+    [@"E" drawAtPoint:NSMakePoint(5, 1) withAttributes:attributes];
+    [image unlockFocus];
+    image.template = YES;
+    return image;
+}
+
+- (void)drawEyeInRect:(NSRect)rect
+{
+    NSBezierPath *eye = [NSBezierPath bezierPath];
+    [eye moveToPoint:NSMakePoint(NSMinX(rect), NSMidY(rect))];
+    [eye curveToPoint:NSMakePoint(NSMaxX(rect), NSMidY(rect))
+        controlPoint1:NSMakePoint(NSMinX(rect) + NSWidth(rect) * .25, NSMaxY(rect))
+        controlPoint2:NSMakePoint(NSMaxX(rect) - NSWidth(rect) * .25, NSMaxY(rect))];
+    [eye curveToPoint:NSMakePoint(NSMinX(rect), NSMidY(rect))
+        controlPoint1:NSMakePoint(NSMaxX(rect) - NSWidth(rect) * .25, NSMinY(rect))
+        controlPoint2:NSMakePoint(NSMinX(rect) + NSWidth(rect) * .25, NSMinY(rect))];
+    [eye stroke];
+    NSBezierPath *pupil = [NSBezierPath bezierPathWithOvalInRect:NSInsetRect(rect, NSWidth(rect) * .38, NSHeight(rect) * .25)];
+    [pupil stroke];
+}
+
+- (NSImage *)previewOnlyIcon
+{
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(19, 19)];
+    [image lockFocus];
+    [[NSColor controlTextColor] setStroke];
+    [self drawEyeInRect:NSMakeRect(2, 5, 15, 9)];
+    [image unlockFocus];
+    image.template = YES;
+    return image;
+}
+
+- (NSImage *)splitIconWithEditorLeft:(BOOL)editorLeft
+{
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(19, 19)];
+    [image lockFocus];
+    [[NSColor controlTextColor] setStroke];
+    NSBezierPath *frame = [NSBezierPath bezierPathWithRect:NSMakeRect(2, 3, 15, 13)];
+    frame.lineWidth = 1.4;
+    [frame stroke];
+    NSBezierPath *divider = [NSBezierPath bezierPath];
+    divider.lineWidth = 1.2;
+    [divider moveToPoint:NSMakePoint(9.5, 3)];
+    [divider lineToPoint:NSMakePoint(9.5, 16)];
+    [divider stroke];
+
+    NSDictionary *attrs = @{
+        NSFontAttributeName: [NSFont boldSystemFontOfSize:8],
+        NSForegroundColorAttributeName: [NSColor controlTextColor],
+    };
+    if (editorLeft)
+    {
+        [@"E" drawAtPoint:NSMakePoint(4.5, 5) withAttributes:attrs];
+        [self drawEyeInRect:NSMakeRect(11, 7, 4.5, 3.5)];
+    }
+    else
+    {
+        [self drawEyeInRect:NSMakeRect(4, 7, 4.5, 3.5)];
+        [@"E" drawAtPoint:NSMakePoint(12, 5) withAttributes:attrs];
+    }
+    [image unlockFocus];
+    image.template = YES;
+    return image;
+}
+
+- (NSToolbarItem *)toolbarItemWithIdentifier:(NSString *)itemIdentifier
+                                       label:(NSString *)label
+                                       image:(NSImage *)image
+                                      action:(SEL)action
+{
+    NSToolbarItem *toolbarItem = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
+    toolbarItem.label = label;
+    toolbarItem.paletteLabel = label;
+    toolbarItem.toolTip = label;
+    image.template = YES;
+    image.size = CGSizeMake(19, 19);
+    toolbarItem.image = image;
+    toolbarItem.action = action;
+    return toolbarItem;
+}
+
+- (NSToolbarItem *)toolbarItemLayoutControls
+{
+    NSToolbarItem *editorItem = [self toolbarItemWithIdentifier:@"layout-editor"
+                                                          label:NSLocalizedString(@"Editor Layout", @"")
+                                                          image:[self editorOnlyIcon]
+                                                         action:@selector(selectEditorLayoutButton:)];
+    NSToolbarItem *previewItem = [self toolbarItemWithIdentifier:@"layout-preview"
+                                                           label:NSLocalizedString(@"Preview Layout", @"")
+                                                           image:[self splitIconWithEditorLeft:YES]
+                                                          action:@selector(selectPreviewLayoutButton:)];
+    return [self toolbarItemGroupWithIdentifier:@"layout-group"
+                                      separated:YES
+                                          label:NSLocalizedString(@"Layout", @"Layout toolbar button")
+                                          items:@[editorItem, previewItem]];
+}
+
+- (NSToolbarItem *)toolbarItemContinuousReading
+{
+    NSToolbarItem *toolbarItem = [[NSToolbarItem alloc] initWithItemIdentifier:@"continuous-reading"];
+    NSString *label = NSLocalizedString(@"Continuous Reading", @"Continuous reading toolbar button");
+    toolbarItem.label = label;
+    toolbarItem.paletteLabel = label;
+    toolbarItem.toolTip = label;
+
+    NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 57, 27)];
+
+    NSBox *leftSeparator = [[NSBox alloc] initWithFrame:NSMakeRect(0, 5, 1, 17)];
+    leftSeparator.boxType = NSBoxSeparator;
+    [container addSubview:leftSeparator];
+
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(10, 0, itemWidth, 27)];
+    button.image = [self singlePageIcon];
+    button.imageScaling = NSImageScaleProportionallyDown;
+    button.bezelStyle = NSBezelStyleTexturedRounded;
+    button.focusRingType = NSFocusRingTypeDefault;
+    button.target = self;
+    button.action = @selector(toggleContinuousReadingFromToolbar:);
+    [container addSubview:button];
+    self->continuousReadingButton = button;
+
+    NSBox *rightSeparator = [[NSBox alloc] initWithFrame:NSMakeRect(56, 5, 1, 17)];
+    rightSeparator.boxType = NSBoxSeparator;
+    [container addSubview:rightSeparator];
+
+    toolbarItem.view = container;
+    toolbarItem.minSize = container.frame.size;
+    toolbarItem.maxSize = container.frame.size;
+    [self->toolbarItemIdentifierObjectDictionary setObject:toolbarItem forKey:toolbarItem.itemIdentifier];
+    return toolbarItem;
 }
 
 /**

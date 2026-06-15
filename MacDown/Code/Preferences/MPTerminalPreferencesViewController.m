@@ -40,6 +40,7 @@ NS_INLINE NSColor *MPGetInstallationIndicatorColor(BOOL installed)
 @property (weak) IBOutlet NSButton *installUninstallButton;
 
 @property (nonatomic) NSURL *shellUtilityURL;
+@property (copy) NSString *commandInstallationPath;
 
 @end
 
@@ -82,7 +83,7 @@ NS_INLINE NSColor *MPGetInstallationIndicatorColor(BOOL installed)
                                                toHaveTrait:NSFontItalicTrait];
         self.installUninstallButton.title = NSLocalizedString(
             @"Install", @"Install shell utility button");
-        self.installUninstallButton.action = @selector(installShellUtility);
+        self.installUninstallButton.action = @selector(installShellUtility:);
     }
 }
 
@@ -136,13 +137,14 @@ NS_INLINE NSColor *MPGetInstallationIndicatorColor(BOOL installed)
             macdownPath =
                 [prefix stringByAppendingPathComponent:@"bin/macdown"];
         }
+        weakSelf.commandInstallationPath = macdownPath;
 
         if ([[NSFileManager defaultManager] fileExistsAtPath:macdownPath])
             weakSelf.shellUtilityURL = [NSURL fileURLWithPath:macdownPath];
     });
 }
 
-- (void)installShellUtility
+- (void)installShellUtility:(id)sender
 {
     // URL for macdown utility in .app bundle
     NSURL *sharedSupportURL = [NSBundle mainBundle].sharedSupportURL;
@@ -152,11 +154,12 @@ NS_INLINE NSColor *MPGetInstallationIndicatorColor(BOOL installed)
     NSFileManager *fm = [NSFileManager defaultManager];
     if ([fm fileExistsAtPath:utilityBundlePath])
     {
-        BOOL ok = [fm createSymbolicLinkAtPath:MPCommandInstallationPath
+        NSString *installPath = self.commandInstallationPath ?: MPCommandInstallationPath;
+        [fm removeItemAtPath:installPath error:NULL];
+        BOOL ok = [fm createSymbolicLinkAtPath:installPath
                            withDestinationPath:utilityBundlePath error:NULL];
         if (ok)
             [self lookForShellUtility];
-        // TODO: Handle install failure.
     }
 }
 
