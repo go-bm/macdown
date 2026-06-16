@@ -1181,6 +1181,9 @@ shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
     [self.undoManager removeAllActions];
     [self updateChangeCount:NSChangeCleared];
     [self updateAutosaveNameForCurrentFile];
+    [self.editor.layoutManager ensureLayoutForTextContainer:self.editor.textContainer];
+    [self.renderer parseAndRenderNow];
+    [self.highlighter parseAndHighlightNow];
 
     for (NSWindowController *controller in self.windowControllers)
         [controller synchronizeWindowTitleWithDocumentName];
