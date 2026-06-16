@@ -226,6 +226,7 @@ typedef NS_ENUM(NSUInteger, MPDocumentLayoutState) {
 @property (strong) NSTableView *workspaceTableView;
 @property (strong) id continuousReadingTitlebarAccessoryController;
 @property (strong) NSButton *continuousReadingTitlebarButton;
+@property (strong) id workspaceSidebarTitlebarAccessoryController;
 @property (weak) IBOutlet NSView *editorContainer;
 @property (unsafe_unretained) IBOutlet MPEditorView *editor;
 @property (weak) IBOutlet NSLayoutConstraint *editorPaddingBottom;
@@ -302,6 +303,7 @@ typedef NS_ENUM(NSUInteger, MPDocumentLayoutState) {
 - (void)disableContinuousReadingComposedPreview;
 - (void)installContinuousReadingTitlebarSwitchIfAvailable;
 - (void)updateContinuousReadingTitlebarSwitch;
+- (void)installWorkspaceSidebarTitlebarButtonIfAvailable;
 - (BOOL)continuousReadingAvailable;
 - (void)syncContinuousReadingSelectionFromPreview;
 - (BOOL)loadWorkspaceFileURLForContinuousReadingSelection:(NSURL *)targetURL
@@ -608,6 +610,7 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
     if (![self reloadWorkspaceFileListWithError:error])
         return NO;
     [self updateContinuousReadingTitlebarSwitch];
+    [self installWorkspaceSidebarTitlebarButtonIfAvailable];
 
     if (fileURL)
     {
@@ -1370,6 +1373,44 @@ shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
     button.hidden = (self.workspaceRootURL == nil);
     button.enabled = [self continuousReadingAvailable];
     button.state = self.continuousReadingEnabled ? NSOnState : NSOffState;
+}
+
+- (void)installWorkspaceSidebarTitlebarButtonIfAvailable
+{
+    if (self.workspaceSidebarTitlebarAccessoryController)
+        return;
+
+    NSWindow *window = self.windowForSheet;
+    Class accessoryClass = NSClassFromString(@"NSTitlebarAccessoryViewController");
+    if (!window || !accessoryClass
+        || ![window respondsToSelector:@selector(addTitlebarAccessoryViewController:)])
+        return;
+
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 32.0, 24.0)];
+    NSImage *image = [NSImage imageNamed:@"NSSidebarTemplate"];
+    if (image)
+    {
+        image.template = YES;
+        button.image = image;
+        button.imagePosition = NSImageOnly;
+    }
+    else
+    {
+        button.title = @"☰";
+    }
+    button.toolTip = NSLocalizedString(@"Show/Hide Markdown List", @"Workspace sidebar titlebar button tooltip");
+    button.bezelStyle = NSTexturedRoundedBezelStyle;
+    [button setButtonType:NSMomentaryPushInButton];
+    button.target = self;
+    button.action = @selector(toggleWorkspaceSidebar:);
+
+    id accessoryController = [[accessoryClass alloc] init];
+    [accessoryController setView:button];
+    if ([accessoryController respondsToSelector:@selector(setLayoutAttribute:)])
+        [accessoryController setValue:@(NSLayoutAttributeLeft) forKey:@"layoutAttribute"];
+    [window addTitlebarAccessoryViewController:accessoryController];
+
+    self.workspaceSidebarTitlebarAccessoryController = accessoryController;
 }
 
 - (MPContinuousReadingBoundary)continuousReadingBoundaryForScrollView:(NSScrollView *)scrollView
