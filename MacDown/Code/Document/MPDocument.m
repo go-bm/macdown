@@ -263,6 +263,8 @@ typedef NS_ENUM(NSUInteger, MPDocumentLayoutState) {
 @property (nonatomic) BOOL switchingWorkspaceFile;
 @property (nonatomic) BOOL workspaceSidebarShown;
 @property (nonatomic) CGFloat workspaceSidebarWidth;
+@property (nonatomic) BOOL autoOpenedWorkspace;
+@property (nonatomic) BOOL suppressWorkspaceLayoutStateSave;
 @property (nonatomic) MPWorkspaceLandingPosition pendingWorkspaceLandingPosition;
 @property (nonatomic) MPWorkspaceLandingPosition pendingPreviewLandingPosition;
 @property (nonatomic) BOOL hasPendingPreviewLandingPosition;
@@ -280,6 +282,7 @@ typedef NS_ENUM(NSUInteger, MPDocumentLayoutState) {
 - (void)syncScrollers;
 -(void) updateHeaderLocations;
 - (void)autoOpenWorkspaceForCurrentFileIfNeeded;
+- (void)autoOpenWorkspaceAndRestoreLayoutIfNeeded;
 - (BOOL)isWorkspaceMarkdownFileURL:(NSURL *)fileURL;
 - (NSUInteger)indexOfWorkspaceFileURL:(NSURL *)fileURL;
 - (void)selectWorkspaceFileURL:(NSURL *)fileURL;
@@ -560,8 +563,7 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
         [self setupEditor:nil];
         [self redrawDivider];
         [self reloadFromLoadedString];
-        [self autoOpenWorkspaceForCurrentFileIfNeeded];
-        [self restoreWorkspaceLayoutStateIfNeeded];
+        [self autoOpenWorkspaceAndRestoreLayoutIfNeeded];
         [self updateContinuousReadingTitlebarSwitch];
     }];
 }
@@ -644,14 +646,23 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
     return YES;
 }
 
+- (void)autoOpenWorkspaceAndRestoreLayoutIfNeeded
+{
+    [self autoOpenWorkspaceForCurrentFileIfNeeded];
+    [self restoreWorkspaceLayoutStateIfNeeded];
+}
+
 - (void)autoOpenWorkspaceForCurrentFileIfNeeded
 {
-    if (self.workspaceRootURL || ![self isWorkspaceMarkdownFileURL:self.fileURL])
+    if (self.workspaceRootURL || !self.splitView.superview
+        || ![self isWorkspaceMarkdownFileURL:self.fileURL])
         return;
 
+    self.autoOpenedWorkspace = YES;
     NSURL *directoryURL = [self.fileURL URLByDeletingLastPathComponent];
     NSError *error = nil;
-    [self openWorkspaceAtURL:directoryURL selectingFileURL:self.fileURL error:&error];
+    if (![self openWorkspaceAtURL:directoryURL selectingFileURL:self.fileURL error:&error])
+        self.autoOpenedWorkspace = NO;
 }
 
 - (BOOL)isWorkspaceMarkdownFileURL:(NSURL *)fileURL
@@ -752,6 +763,9 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
 
     self.loadedString = content;
     [self reloadFromLoadedString];
+    [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+        [self autoOpenWorkspaceAndRestoreLayoutIfNeeded];
+    }];
     return YES;
 }
 
@@ -2439,8 +2453,9 @@ shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
             [self setSplitViewDividerLocation:1.0 - ratio];
             break;
     }
-    [[NSUserDefaults standardUserDefaults] setInteger:state
-                                               forKey:kMPWorkspaceLayoutStateKey];
+    if (!self.suppressWorkspaceLayoutStateSave)
+        [[NSUserDefaults standardUserDefaults] setInteger:state
+                                                   forKey:kMPWorkspaceLayoutStateKey];
 }
 
 - (void)restoreWorkspaceLayoutStateIfNeeded
@@ -2449,12 +2464,15 @@ shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
         return;
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     id storedState = [defaults objectForKey:kMPWorkspaceLayoutStateKey];
-    NSInteger state = storedState ? [defaults integerForKey:kMPWorkspaceLayoutStateKey]
-                                  : MPDocumentLayoutStateEditorLeftPreviewRight;
+    NSInteger state = self.autoOpenedWorkspace ? MPDocumentLayoutStatePreviewOnly
+        : (storedState ? [defaults integerForKey:kMPWorkspaceLayoutStateKey]
+                       : MPDocumentLayoutStateEditorLeftPreviewRight);
     if (state < MPDocumentLayoutStateEditorOnly
         || state > MPDocumentLayoutStatePreviewLeftEditorRight)
         state = MPDocumentLayoutStateEditorLeftPreviewRight;
+    self.suppressWorkspaceLayoutStateSave = self.autoOpenedWorkspace;
     [self setDocumentLayoutState:(MPDocumentLayoutState)state];
+    self.suppressWorkspaceLayoutStateSave = NO;
 }
 
 - (void)toggleSplitterCollapsingEditorPane:(BOOL)forEditorPane
