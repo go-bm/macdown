@@ -274,6 +274,8 @@ typedef NS_ENUM(NSUInteger, MPDocumentLayoutState) {
 @property (nonatomic) BOOL renderingContinuousReadingPreview;
 @property (copy) NSArray<NSURL *> *continuousReadingRenderedFileURLs;
 @property (nonatomic) BOOL syncingContinuousReadingSelection;
+@property (nonatomic) MPDocumentLayoutState savedLayoutStateBeforeFullscreen;
+@property (nonatomic) BOOL hasSavedLayoutStateBeforeFullscreen;
 
 // Store file content in initializer until nib is loaded.
 @property (copy) NSString *loadedString;
@@ -536,12 +538,14 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
                      object:self.preview.enclosingScrollView];
     }
 
-    // Re-apply layout state when entering/leaving fullscreen. The split view's
-    // resize with old size can break divider positions (e.g. 0.0 for
-    // preview-only) because NSSplitView redistributes proportionally.
-    [center addObserver:self selector:@selector(handleWindowFullScreenOrResize:)
+    // Save layout state before fullscreen and restore it after, because
+    // NSSplitView's resizeSubviewsWithOldSize: redistributes proportionally
+    // and breaks 0.0/1.0 divider positions (preview-only / editor-only).
+    [center addObserver:self selector:@selector(handleWindowWillEnterFullScreen:)
+                   name:NSWindowWillEnterFullScreenNotification object:nil];
+    [center addObserver:self selector:@selector(handleWindowDidEnterOrExitedFullScreen:)
                    name:NSWindowDidEnterFullScreenNotification object:nil];
-    [center addObserver:self selector:@selector(handleWindowFullScreenOrResize:)
+    [center addObserver:self selector:@selector(handleWindowDidEnterOrExitedFullScreen:)
                    name:NSWindowDidExitFullScreenNotification object:nil];
 
     self.needsToUnregister = YES;
@@ -2497,35 +2501,38 @@ shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
     self.suppressWorkspaceLayoutStateSave = NO;
 }
 
-- (void)handleWindowFullScreenOrResize:(NSNotification *)notification
+- (BOOL)isOwnWindow:(NSWindow *)window
 {
-    // NSSplitView's resizeSubviewsWithOldSize: redistributes subviews
-    // proportionally, which breaks 0.0/1.0 divider positions (preview-only or
-    // editor-only). Re-apply the current layout state to restore them.
-    NSWindow *window = notification.object;
-    BOOL isOurs = NO;
     for (NSWindowController *wc in self.windowControllers)
     {
         if (wc.window == window)
-        {
-            isOurs = YES;
-            break;
-        }
+            return YES;
     }
-    if (!isOurs)
+    return NO;
+}
+
+- (void)handleWindowWillEnterFullScreen:(NSNotification *)notification
+{
+    if (![self isOwnWindow:notification.object])
+        return;
+    self.savedLayoutStateBeforeFullscreen = [self currentLayoutState];
+    self.hasSavedLayoutStateBeforeFullscreen = YES;
+}
+
+- (void)handleWindowDidEnterOrExitedFullScreen:(NSNotification *)notification
+{
+    if (![self isOwnWindow:notification.object])
+        return;
+    if (!self.hasSavedLayoutStateBeforeFullscreen)
         return;
 
+    MPDocumentLayoutState state = self.savedLayoutStateBeforeFullscreen;
+    self.hasSavedLayoutStateBeforeFullscreen = NO;
+
     [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-        MPDocumentLayoutState state = [self currentLayoutState];
-        // Only re-apply if we're in a single-pane state (0.0 or 1.0 ratio)
-        // that got broken by the resize.
-        if (state == MPDocumentLayoutStateEditorOnly
-            || state == MPDocumentLayoutStatePreviewOnly)
-        {
-            self.suppressWorkspaceLayoutStateSave = YES;
-            [self setDocumentLayoutState:state];
-            self.suppressWorkspaceLayoutStateSave = NO;
-        }
+        self.suppressWorkspaceLayoutStateSave = YES;
+        [self setDocumentLayoutState:state];
+        self.suppressWorkspaceLayoutStateSave = NO;
     }];
 }
 
