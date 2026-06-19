@@ -79,6 +79,22 @@ Refer to the official guides of Git and CocoaPods if you need more instructions.
     git submodule update
     bundle exec pod install
 
+### Build
+
+A build script is provided at `Tools/build_debug.sh` for building from the command line:
+
+    bash Tools/build_debug.sh
+
+This script runs `xcodebuild` with parameters that work around deployment target and architecture issues in the current SDK:
+
+- `-workspace MacDown.xcworkspace` — uses the workspace so CocoaPods dependencies are linked correctly
+- `-destination 'platform=macOS,arch=x86_64'` — builds only for x86_64 (avoids `libarclite` missing on arm64)
+- `MACOSX_DEPLOYMENT_TARGET=10.13` — overrides the deployment target at the command line (10.13+ does not require `libarclite_macosx.a`)
+
+The build output (Debug configuration) is placed under Xcode's DerivedData directory. If you prefer to build from Xcode, open `MacDown.xcworkspace` and build the **MacDown** scheme (set the build architecture to x86_64 if needed).
+
+> **Note:** Do not modify `Podfile` or `.pbxproj` to fix build issues — the build script handles everything via command-line overrides.
+
 ### Translation
 
 Please help translation on [Transifex](https://www.transifex.com/macdown/macdown/).

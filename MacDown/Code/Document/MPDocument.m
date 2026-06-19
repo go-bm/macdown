@@ -564,6 +564,10 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
         [self redrawDivider];
         [self reloadFromLoadedString];
         [self autoOpenWorkspaceAndRestoreLayoutIfNeeded];
+        // Retry workspace opening if it was skipped earlier due to timing
+        // (e.g. fileURL not yet set when readFromData:'s block ran).
+        if (!self.workspaceRootURL && self.fileURL)
+            [self autoOpenWorkspaceAndRestoreLayoutIfNeeded];
         [self updateContinuousReadingTitlebarSwitch];
     }];
 }
@@ -654,8 +658,15 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
 
 - (void)autoOpenWorkspaceForCurrentFileIfNeeded
 {
-    if (self.workspaceRootURL || !self.splitView.superview
-        || ![self isWorkspaceMarkdownFileURL:self.fileURL])
+    if (self.workspaceRootURL)
+        return;
+
+    // Defer if the view is not ready yet; windowControllerDidLoadNib's
+    // main-queue block will give us another chance.
+    if (!self.splitView.superview)
+        return;
+
+    if (![self isWorkspaceMarkdownFileURL:self.fileURL])
         return;
 
     self.autoOpenedWorkspace = YES;

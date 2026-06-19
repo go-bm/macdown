@@ -324,7 +324,12 @@ NS_INLINE void treat()
 
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender
 {
+    // Don't create an untitled document if files are pending from the
+    // command-line tool, or if a document was already opened (e.g. via
+    // Finder double-click or URL scheme).
     if (self.preferences.filesToOpen.count || self.preferences.pipedContentFileToOpen)
+        return NO;
+    if ([NSDocumentController sharedDocumentController].documents.count > 0)
         return NO;
     return !self.preferences.supressesUntitledDocumentOnLaunch;
 }
