@@ -536,6 +536,14 @@ static void (^MPGetPreviewLoadingCompletionHandler(MPDocument *doc))()
                      object:self.preview.enclosingScrollView];
     }
 
+    // Re-apply layout state when entering/leaving fullscreen. The split view's
+    // resize with old size can break divider positions (e.g. 0.0 for
+    // preview-only) because NSSplitView redistributes proportionally.
+    [center addObserver:self selector:@selector(handleWindowFullScreenOrResize:)
+                   name:NSWindowDidEnterFullScreenNotification object:nil];
+    [center addObserver:self selector:@selector(handleWindowFullScreenOrResize:)
+                   name:NSWindowDidExitFullScreenNotification object:nil];
+
     self.needsToUnregister = YES;
 
     self.wordsMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:NULL
@@ -2487,6 +2495,38 @@ shouldSwitchWorkspaceFile:(BOOL)shouldSwitch contextInfo:(void *)contextInfo
     self.suppressWorkspaceLayoutStateSave = self.autoOpenedWorkspace;
     [self setDocumentLayoutState:(MPDocumentLayoutState)state];
     self.suppressWorkspaceLayoutStateSave = NO;
+}
+
+- (void)handleWindowFullScreenOrResize:(NSNotification *)notification
+{
+    // NSSplitView's resizeSubviewsWithOldSize: redistributes subviews
+    // proportionally, which breaks 0.0/1.0 divider positions (preview-only or
+    // editor-only). Re-apply the current layout state to restore them.
+    NSWindow *window = notification.object;
+    BOOL isOurs = NO;
+    for (NSWindowController *wc in self.windowControllers)
+    {
+        if (wc.window == window)
+        {
+            isOurs = YES;
+            break;
+        }
+    }
+    if (!isOurs)
+        return;
+
+    [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+        MPDocumentLayoutState state = [self currentLayoutState];
+        // Only re-apply if we're in a single-pane state (0.0 or 1.0 ratio)
+        // that got broken by the resize.
+        if (state == MPDocumentLayoutStateEditorOnly
+            || state == MPDocumentLayoutStatePreviewOnly)
+        {
+            self.suppressWorkspaceLayoutStateSave = YES;
+            [self setDocumentLayoutState:state];
+            self.suppressWorkspaceLayoutStateSave = NO;
+        }
+    }];
 }
 
 - (void)toggleSplitterCollapsingEditorPane:(BOOL)forEditorPane
