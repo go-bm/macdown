@@ -60,19 +60,24 @@ if [ "${1:-}" = "--install" ]; then
   fi
 fi
 
-# Unregister DerivedData MacDown.app from LaunchServices to prevent
-# duplicate "Open with MacDown" entries in Finder/Spotlight.
+# Unregister AND DELETE any DerivedData MacDown.app — just unregistering is
+# not enough; lsd / Spotlight will re-register it on next scan as long as the
+# .app exists on disk, causing duplicates in Finder/Spotlight/App Store list.
 LSREG="/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister"
 DERIVED_ROOT="$(dirname "$DERIVED_BASE")"  # .../Build/Products
 for config_app in "$DERIVED_ROOT"/Debug/MacDown.app "$DERIVED_ROOT"/Release/MacDown.app; do
-  if [ -d "$config_app" ]; then
+  if [ -d "$config_app" ] && [ "$config_app" != "/Applications/MacDown.app" ]; then
     "$LSREG" -u "$config_app" 2>/dev/null || true
-    echo "Unregistered $config_app from LaunchServices"
+    rm -rf "$config_app" 2>/dev/null || true
+    echo "Removed $config_app (unregistered + deleted)"
   fi
 done
 for stale in $(mdfind -onlyin "$HOME/Library/Developer/Xcode/DerivedData" "kMDItemFSName == 'MacDown.app'" 2>/dev/null); do
-  if [ "$stale" != "/Applications/MacDown.app" ]; then
+  if [ "$stale" != "/Applications/MacDown.app" ] && [ -d "$stale" ]; then
     "$LSREG" -u "$stale" 2>/dev/null || true
-    echo "Unregistered stale $stale from LaunchServices"
+    rm -rf "$stale" 2>/dev/null || true
+    echo "Removed stale $stale (unregistered + deleted)"
   fi
 done
+# One final lsd kick so the deleted entries actually disappear from the cache
+killall lsd 2>/dev/null || true
