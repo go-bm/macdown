@@ -81,11 +81,20 @@ Refer to the official guides of Git and CocoaPods if you need more instructions.
 
 ### Build
 
-A build script is provided at `Tools/build_debug.sh` for building from the command line:
+Two build scripts are provided under `Tools/`:
 
-    bash Tools/build_debug.sh
+- **`Tools/build_release.sh` (recommended)** — builds the Release configuration and (with `--install`) overwrites `/Applications/MacDown.app`. **Use this for everyday development and verification** unless you specifically need Debug symbols.
+- `Tools/build_debug.sh` — builds Debug (useful only when you need to attach a debugger). The Debug bundle id is `com.uranusjr.macdown-debug`, which is a *different* application from `com.uranusjr.macdown` (Release) as far as macOS LaunchServices is concerned. Long-term use of the Debug build as your installed MacDown causes duplicate entries in Finder/Spotlight and unstable default-app bindings for `.md` files.
 
-This script runs `xcodebuild` with parameters that work around deployment target and architecture issues in the current SDK:
+Typical workflow:
+
+    # Build + install Release in one shot
+    bash Tools/build_release.sh --install
+
+    # Or just build, then inspect the .app under DerivedData
+    bash Tools/build_release.sh
+
+Both scripts pass the same workarounds to `xcodebuild` to avoid SDK issues:
 
 - `-workspace MacDown.xcworkspace` — uses the workspace so CocoaPods dependencies are linked correctly
 - `-destination 'platform=macOS,arch=x86_64'` — builds only for x86_64 (avoids `libarclite` missing on arm64)
